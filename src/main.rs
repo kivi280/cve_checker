@@ -1,112 +1,91 @@
+mod cve;
+
 use std::{fs::File};
 use std::io::Read;
-use std::path::Path;
-use chrono::{DateTime, Utc};
+use std::path::{Path};
+use chrono::Datelike;
+use cve::{Cve};
+use clap::Parser;
 
-#[derive(Debug)]
-struct Output {
-    cve_number: String,
-    software_name: String,
-    date: DateTime<Utc>,
-    versions: Vec<String>,
-    json_file: Path
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    ///start year
+    #[arg(short, long)]
+    start_year: i32,
+
+    ///end year
+    #[arg(short, long, default_value_t=chrono::Utc::now().year())]
+    end_year: i32,
+
+    /// csv_file with softwarenames and version
+    #[arg(short='c', long)]
+    csv_file: Option<std::path::PathBuf>,
+
+    /// directory of cve files
+    #[arg(long, short='C', default_value = ".")]
+    cve_dir: Option<std::path::PathBuf>,
 }
 
-
-struct User {
-    id: i8,
-    name: String,
-
-}
-
-#[derive(Debug)]
-struct Config {
-    start_time: DateTime<Utc>,
-    csv_file: String,
-    cve_directory: String
-}
-
-
-impl Config {
-        pub fn new() -> Config {
-            Config { 
-                start_time: chrono::offset::Utc::now(),
-                csv_file: String::new(),
-                cve_directory: String::new()
+impl Args {
+    fn check_path(&self) -> bool {
+        let is_file = match &self.csv_file {
+            Some(path) => {
+                if !path.is_file(){
+                    std::println!("csv_file not found: {}",&path.to_string_lossy());
+                }
+                return path.is_file();
             }
-        }
-}
-
-
-fn main() {
-    let file_path = Path::new("./test_data/customer.json");
-
-    let configuration = match check_args() {
-        Ok(args) => args,
-        Err(message) => 
-            {
-                std::println!("{}", message);
-                return;
-            }
-    };
-    std::println!("start_time: {}", configuration.start_time);
-    std::println!("csv_file: {}", configuration.csv_file);
-    std::println!("cve_directory: {}", configuration.cve_directory);
-
-    match  read_json_file(file_path){
-        Ok(data) => std::println!("{}", data),
-        Err(message) => std::println!("{}",message)
-    }
-    
-}
-
-fn check_args() -> Result<Config, String> {
-    let args: Vec<String> = env::args().collect();
-    let mut arg : Config = Config::new();
-
-    std::println!("args: {}", args.len());
-    if(args.len() < 4) {
-        return Err("please add 3 args: <start_time> <csv_path> <cve_directory>".to_string());
-    }
-
-    // read start_time and parse to datetime utc
-    if !args[1].is_empty() {
-        let date_string: String = format!("{} 00:00:00", &args[1]);
-        // std::de!("{}",date_string);
-        arg.start_time  = match chrono::NaiveDateTime::parse_from_str(&date_string, "%Y-%m-%d %H:%M:%S") {
-            Ok(datetime) => datetime.and_utc(),
-            Err(message) => return Err(String::from(format!("failed to parse string to datetime: {}", message)))
+            None => false
         };
 
+        let is_dir = match &self.cve_dir {
+            Some(path) => {
+                if !path.is_dir(){
+                    std::println!("cve_dir not found: {}", &path.to_string_lossy());
+                }
+                return path.is_dir();                
+            },
+            None => false,
+        };
+        return is_file & is_dir;
     }
-    // std::println!("{}", arg.start_time.to_string());
-
-    // read csv_path
-    if !args[2].is_empty() {
-        
-    }
-
-    // read cve_directory
-    if !args[3].is_empty() {
-        
-    }   
-    return Ok(arg);
 }
 
+fn main() { 
+    let args = Args::parse();
+    if !args.check_path() {
+        return;
+    }
+    let file_path = Path::new("./test_data/cve_test.json");
+    
+    std::println!("start_year: {}", args.start_year);
+    std::println!("csv_file: {:?}", args.csv_file);
+    std::println!("cve_directory: {:?}", args.cve_dir);
 
-fn read_json_file(file_path: &Path) -> Result<serde_json::Value, String> {
+    for n in args.start_year..=args.end_year {
+        std::println!("{}", n);
+    }
+
+    match read_json_file(file_path) {
+        Ok(data) => std::println!("{}", data),
+        Err(message) => std::println!("{}", message)
+    }
+}
+
+fn read_json_file(file_path: &Path) -> Result<Cve, String> {
     let mut file = match File::open(&file_path) {
         Ok(file) => file,
         Err(message) => return Err(String::from(format!("failed to open file: {}", message)))
     };
     
-    let mut data = String::new();
+    let mut data: String = String::new();
 
     match file.read_to_string(&mut data)   {
         Ok(_) => match serde_json::from_str(&data) {
-                    Ok(json_data) => return json_data,
+                    Ok(json_data) => return Ok(json_data),
                     Err(message) => return Err(String::from(format!("failed to convert content to str: {}", message)))
                 },
         Err(message) => return Err(String::from(format!("failed to read file: {}", message)))
-    };
+    }
 }
